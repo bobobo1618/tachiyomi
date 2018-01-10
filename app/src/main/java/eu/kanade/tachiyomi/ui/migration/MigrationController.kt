@@ -3,7 +3,9 @@ package eu.kanade.tachiyomi.ui.migration
 import android.app.Dialog
 import android.os.Bundle
 import android.support.v7.widget.LinearLayoutManager
-import android.view.*
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
 import com.afollestad.materialdialogs.MaterialDialog
 import eu.davidea.flexibleadapter.FlexibleAdapter
 import eu.davidea.flexibleadapter.items.IFlexible
@@ -63,7 +65,7 @@ class MigrationController : NucleusController<MigrationPresenter>(),
 
     fun render(state: ViewState) {
         if (state.selectedSource == null) {
-            title = "Source migration tool" // TODO resource
+            title = resources?.getString(R.string.label_migration)
             if (adapter !is SourceAdapter) {
                 adapter = SourceAdapter(this)
                 migration_recycler.adapter = adapter
@@ -104,8 +106,12 @@ class MigrationController : NucleusController<MigrationPresenter>(),
         onItemClick(position)
     }
 
-    fun onReplacementSelected(prevManga: Manga, manga: Manga) {
-        presenter.replaceManga(prevManga, manga)
+    fun onMigrateSelected(prevManga: Manga, manga: Manga) {
+        presenter.migrateManga(prevManga, manga, replace = true)
+    }
+
+    fun onCopySelected(prevManga: Manga, manga: Manga) {
+        presenter.migrateManga(prevManga, manga, replace = false)
     }
 
     class LoadingController : DialogController() {
@@ -113,7 +119,7 @@ class MigrationController : NucleusController<MigrationPresenter>(),
         override fun onCreateDialog(savedViewState: Bundle?): Dialog {
             return MaterialDialog.Builder(activity!!)
                     .progress(true, 0)
-                    .content("Migrating...") // TODO resource
+                    .content(R.string.migrating)
                     .cancelable(false)
                     .build()
         }

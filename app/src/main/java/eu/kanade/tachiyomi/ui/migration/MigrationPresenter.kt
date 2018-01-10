@@ -4,6 +4,9 @@ import android.os.Bundle
 import com.jakewharton.rxrelay.BehaviorRelay
 import eu.kanade.tachiyomi.data.database.DatabaseHelper
 import eu.kanade.tachiyomi.data.database.models.Manga
+import eu.kanade.tachiyomi.data.database.models.MangaCategory
+import eu.kanade.tachiyomi.data.preference.PreferencesHelper
+import eu.kanade.tachiyomi.data.preference.getOrDefault
 import eu.kanade.tachiyomi.source.LocalSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.SourceManager
@@ -18,7 +21,8 @@ import uy.kohesive.injekt.api.get
 
 class MigrationPresenter(
         private val sourceManager: SourceManager = Injekt.get(),
-        private val db: DatabaseHelper = Injekt.get()
+        private val db: DatabaseHelper = Injekt.get(),
+        private val preferences: PreferencesHelper = Injekt.get()
 ) : BasePresenter<MigrationController>() {
 
     var state = ViewState()
@@ -50,7 +54,7 @@ class MigrationPresenter(
     }
 
     fun setSelectedSource(source: Source) {
-        state = state.copy(selectedSource = source)
+        state = state.copy(selectedSource = source, mangaForSource = emptyList())
     }
 
     fun deselectSource() {
@@ -68,14 +72,16 @@ class MigrationPresenter(
         return library.filter { it.source == sourceId }.map(::MangaItem)
     }
 
-    fun replaceManga(prevManga: Manga, manga: Manga) {
+    fun migrateManga(prevManga: Manga, manga: Manga, replace: Boolean) {
         val source = sourceManager.get(manga.source) ?: return
 
         state = state.copy(isReplacingManga = true)
 
         Observable.defer { source.fetchChapterList(manga) }
                 // Update chapters
-                .map { mangaChapters ->
+                .doOnNext { mangaChapters ->
+                    if (!preferences.migrateChapters().getOrDefault()) return@doOnNext
+
                     syncChaptersWithSource(db, mangaChapters, manga, source)
 
                     val prevMangaChapters = db.getChapters(prevManga).executeAsBlocking()
@@ -91,8 +97,19 @@ class MigrationPresenter(
                         db.insertChapters(dbChapters).executeAsBlocking()
                     }
                 }
+                .map { Unit }
+                // Update categories
+                .doOnNext {
+                    if (!preferences.migrateCategories().getOrDefault()) return@doOnNext
+
+                    val categories = db.getCategoriesForManga(prevManga).executeAsBlocking()
+                    val mangaCategories = categories.map { MangaCategory.create(manga, it) }
+                    db.setMangaCategories(mangaCategories, listOf(manga))
+                }
                 // Update tracking
-                .map {
+                .doOnNext {
+                    if (!preferences.migrateTracks().getOrDefault()) return@doOnNext
+
                     val tracks = db.getTracks(prevManga).executeAsBlocking()
                     for (track in tracks) {
                         track.id = null
@@ -102,12 +119,13 @@ class MigrationPresenter(
                 }
                 // Swap favorite status if everything went ok
                 .doOnNext {
-                    prevManga.favorite = false
-                    db.updateMangaFavorite(prevManga).executeAsBlocking()
+                    if (replace) {
+                        prevManga.favorite = false
+                        db.updateMangaFavorite(prevManga).executeAsBlocking()
+                    }
                     manga.favorite = true
                     db.updateMangaFavorite(manga).executeAsBlocking()
                 }
-                // TODO migrate categories
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .doOnUnsubscribe { state = state.copy(isReplacingManga = false) }
