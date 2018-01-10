@@ -390,6 +390,9 @@
     <!-- Recent manga fragment -->
     <string name="recent_manga_source">%1$s - Ch.%2$s</string>
 
+    <!-- Source migration screen -->
+    <string name="migration_info">Tap to select the source to migrate from</string>
+
     <!-- Downloads activity and service -->
     <string name="download_queue_error">An error occurred while downloading chapters. You can try again in the downloads section</string>
 
